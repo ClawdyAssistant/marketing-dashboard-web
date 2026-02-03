@@ -1,39 +1,57 @@
 'use client';
 
+import { trpc } from '@/lib/trpc/client';
 import { DollarSign, TrendingUp, MousePointer, ShoppingCart } from 'lucide-react';
 
-const stats = [
-  { 
-    name: 'Total Spend', 
-    value: '$12,345', 
-    change: '+12.5%', 
-    changeType: 'positive',
-    icon: DollarSign 
-  },
-  { 
-    name: 'Revenue', 
-    value: '$34,567', 
-    change: '+18.2%', 
-    changeType: 'positive',
-    icon: TrendingUp 
-  },
-  { 
-    name: 'ROAS', 
-    value: '2.8x', 
-    change: '+5.1%', 
-    changeType: 'positive',
-    icon: MousePointer 
-  },
-  { 
-    name: 'Conversions', 
-    value: '1,234', 
-    change: '-3.2%', 
-    changeType: 'negative',
-    icon: ShoppingCart 
-  },
-];
-
 export function DashboardStats() {
+  const { data, isLoading } = trpc.dashboard.overview.useQuery({
+    dateRange: {
+      start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      end: new Date().toISOString(),
+    }
+  });
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="animate-pulse rounded-lg bg-gray-200 h-32" />
+        ))}
+      </div>
+    );
+  }
+
+  const stats = [
+    { 
+      name: 'Total Spend', 
+      value: `$${data?.totalSpend.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      change: '+12.5%', 
+      changeType: 'positive' as const,
+      icon: DollarSign 
+    },
+    { 
+      name: 'Revenue', 
+      value: `$${data?.totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      change: '+18.2%', 
+      changeType: 'positive' as const,
+      icon: TrendingUp 
+    },
+    { 
+      name: 'ROAS', 
+      value: `${data?.averageRoas.toFixed(2)}x`,
+      change: '+5.1%', 
+      changeType: 'positive' as const,
+      icon: MousePointer 
+    },
+    { 
+      name: 'Conversions', 
+      value: data?.totalConversions.toLocaleString() || '0',
+      change: '-3.2%', 
+      changeType: 'negative' as const,
+      icon: ShoppingCart 
+    },
+  ];
+
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {stats.map((stat) => (

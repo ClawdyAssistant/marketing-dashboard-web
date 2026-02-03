@@ -1,41 +1,34 @@
 'use client';
 
-const campaigns = [
-  { 
-    name: 'Winter Sale Campaign', 
-    platform: 'Google Ads', 
-    spend: '$2,450',
-    revenue: '$7,350',
-    roas: '3.0x',
-    status: 'active'
-  },
-  { 
-    name: 'Product Launch', 
-    platform: 'Meta Ads', 
-    spend: '$1,850',
-    revenue: '$4,625',
-    roas: '2.5x',
-    status: 'active'
-  },
-  { 
-    name: 'Brand Awareness', 
-    platform: 'Google Ads', 
-    spend: '$3,200',
-    revenue: '$5,120',
-    roas: '1.6x',
-    status: 'active'
-  },
-  { 
-    name: 'Retargeting Campaign', 
-    platform: 'Meta Ads', 
-    spend: '$980',
-    revenue: '$3,920',
-    roas: '4.0x',
-    status: 'active'
-  },
-];
+import { trpc } from '@/lib/trpc/client';
 
 export function CampaignTable() {
+  const { data, isLoading } = trpc.dashboard.campaigns.useQuery({
+    dateRange: {
+      start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      end: new Date().toISOString(),
+    },
+    limit: 10,
+    offset: 0,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="bg-white shadow rounded-lg p-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-4 bg-gray-200 rounded w-1/4" />
+          <div className="space-y-3">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-12 bg-gray-200 rounded" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const campaigns = data?.campaigns || [];
+
   return (
     <div className="bg-white shadow rounded-lg">
       <div className="px-4 py-5 sm:p-6">
@@ -70,21 +63,21 @@ export function CampaignTable() {
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {campaigns.map((campaign) => (
-                    <tr key={campaign.name}>
+                    <tr key={campaign.id}>
                       <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">
                         {campaign.name}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        {campaign.platform}
+                        <span className="capitalize">{campaign.platform.replace('-', ' ')}</span>
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        {campaign.spend}
+                        ${campaign.totalSpend.toFixed(2)}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        {campaign.revenue}
+                        ${campaign.totalRevenue.toFixed(2)}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-green-600">
-                        {campaign.roas}
+                        {campaign.roas.toFixed(2)}x
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                         <span className="inline-flex items-center rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
@@ -95,6 +88,11 @@ export function CampaignTable() {
                   ))}
                 </tbody>
               </table>
+              {campaigns.length === 0 && (
+                <div className="text-center py-12">
+                  <p className="text-sm text-gray-500">No campaigns found. Connect an integration to get started!</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
