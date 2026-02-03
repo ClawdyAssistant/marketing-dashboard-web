@@ -1,7 +1,9 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { trpc } from '@/lib/trpc/client';
 import { Plus, RefreshCw, Trash2, CheckCircle, XCircle } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 
 const availableIntegrations = [
   {
@@ -28,7 +30,91 @@ const availableIntegrations = [
 ];
 
 export default function IntegrationsPage() {
-  const { data: integrations, isLoading } = trpc.integrations.list.useQuery();
+  const searchParams = useSearchParams();
+  const [shopDomain, setShopDomain] = useState('');
+  const [showShopifyInput, setShowShopifyInput] = useState(false);
+  const [connecting, setConnecting] = useState<string | null>(null);
+  
+  const { data: integrations, isLoading, refetch } = trpc.integrations.list.useQuery();
+  const initiateOAuthMutation = trpc.integrations.initiateOAuth.useMutation();
+  const disconnectMutation = trpc.integrations.disconnect.useMutation({
+    onSuccess: () => refetch(),
+  });
+  const syncMutation = trpc.integrations.sync.useMutation({
+    onSuccess: () => refetch(),
+  });
+
+  // Check for OAuth success/error
+  useEffect(() => {
+    const success = searchParams.get('success');
+    const error = searchParams.get('error');
+    
+    if (success) {
+      alert(`Successfully connected ${success}!`);
+      refetch();
+      // Clear params
+      window.history.replaceState({}, '', '/integrations');
+    }
+    
+    if (error) {
+      alert(`Failed to connect: ${error}`);
+      // Clear params
+      window.history.replaceState({}, '', '/integrations');
+    }
+  }, [searchParams, refetch]);
+
+  const handleConnect = async (platform: 'google-ads' | 'meta' | 'shopify') => {
+    if (platform === 'shopify') {
+      setShowShopifyInput(true);
+      return;
+    }
+
+    setConnecting(platform);
+    
+    try {
+      const result = await initiateOAuthMutation.mutateAsync({ platform });
+      // Redirect to OAuth URL
+      window.location.href = result.authUrl;
+    } catch (error) {
+      console.error('Failed to initiate OAuth:', error);
+      alert('Failed to start connection process');
+      setConnecting(null);
+    }
+  };
+
+  const handleShopifyConnect = async () => {
+    if (!shopDomain) {
+      alert('Please enter your Shopify domain');
+      return;
+    }
+
+    setConnecting('shopify');
+    
+    try {
+      const result = await initiateOAuthMutation.mutateAsync({
+        platform: 'shopify',
+        shopDomain: shopDomain.replace('.myshopify.com', '') + '.myshopify.com',
+      });
+      // Redirect to OAuth URL
+      window.location.href = result.authUrl;
+    } catch (error) {
+      console.error('Failed to initiate Shopify OAuth:', error);
+      alert('Failed to start connection process');
+      setConnecting(null);
+    }
+  };
+
+  const handleDisconnect = async (id: string) => {
+    if (!confirm('Are you sure you want to disconnect this integration?')) {
+      return;
+    }
+
+    await disconnectMutation.mutateAsync({ id });
+  };
+
+  const handleSync = async (id: string) => {
+    await syncMutation.mutateAsync({ id });
+  };
 
   const connectedPlatforms = new Set(integrations?.map(i => i.platform) || []);
 
@@ -80,13 +166,17 @@ export default function IntegrationsPage() {
                       </span>
                     )}
                     <button
-                      className="p-2 text-gray-400 hover:text-blue-600"
+                      onClick={() => handleSync(integration.id)}
+                      disabled={syncMutation.isLoading || integration.syncStatus === 'syncing'}
+                      className="p-2 text-gray-400 hover:text-blue-600 disabled:opacity-50"
                       title="Refresh data"
                     >
-                      <RefreshCw className="h-4 w-4" />
+                      <RefreshCw className={`h-4 w-4 ${integration.syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
                     </button>
                     <button
-                      className="p-2 text-gray-400 hover:text-red-600"
+                      onClick={() => handleDisconnect(integration.id)}
+                      disabled={disconnectMutation.isLoading}
+                      className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-50"
                       title="Disconnect"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -108,6 +198,7 @@ export default function IntegrationsPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {availableIntegrations.map((integration) => {
               const isConnected = connectedPlatforms.has(integration.id);
+              const isConnecting = connecting === integration.id;
               
               return (
                 <div
@@ -125,28 +216,62 @@ export default function IntegrationsPage() {
                       </p>
                     </div>
                   </div>
-                  <button
-                    disabled={isConnected}
-                    className={`
-                      inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold
-                      ${isConnected
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                      }
-                    `}
-                  >
-                    {isConnected ? (
-                      <>
-                        <CheckCircle className="h-4 w-4" />
-                        Connected
-                      </>
-                    ) : (
-                      <>
-                        <Plus className="h-4 w-4" />
-                        Connect
-                      </>
-                    )}
-                  </button>
+                  
+                  {integration.id === 'shopify' && showShopifyInput && !isConnected ? (
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="your-store.myshopify.com"
+                        value={shopDomain}
+                        onChange={(e) => setShopDomain(e.target.value)}
+                        className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleShopifyConnect}
+                          disabled={isConnecting || !shopDomain}
+                          className="flex-1 inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {isConnecting ? 'Connecting...' : 'Connect'}
+                        </button>
+                        <button
+                          onClick={() => setShowShopifyInput(false)}
+                          className="px-3 py-2 text-sm text-gray-600 hover:text-gray-900"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => handleConnect(integration.id as any)}
+                      disabled={isConnected || isConnecting}
+                      className={`
+                        inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold
+                        ${isConnected
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }
+                      `}
+                    >
+                      {isConnecting ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          Connecting...
+                        </>
+                      ) : isConnected ? (
+                        <>
+                          <CheckCircle className="h-4 w-4" />
+                          Connected
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="h-4 w-4" />
+                          Connect
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               );
             })}
