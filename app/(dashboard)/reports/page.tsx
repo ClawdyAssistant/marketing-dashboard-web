@@ -2,11 +2,13 @@
 
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc/client';
-import { FileText, Download, Sparkles, Calendar, Eye } from 'lucide-react';
+import { FileText, Download, Sparkles, Calendar, Eye, Loader2 } from 'lucide-react';
 import { AIInsightsCard } from '@/components/reports/AIInsightsCard';
 
 export default function ReportsPage() {
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
+  const [generatingPdf, setGeneratingPdf] = useState<string | null>(null);
+  
   const { data: reports, isLoading, refetch } = trpc.reports.list.useQuery();
   const { data: reportDetails } = trpc.reports.getById.useQuery(
     { id: selectedReport! },
@@ -19,6 +21,8 @@ export default function ReportsPage() {
     }
   });
 
+  const pdfMutation = trpc.reports.generatePDF.useMutation();
+
   const handleGenerateReport = async () => {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -30,6 +34,30 @@ export default function ReportsPage() {
         end: now.toISOString(),
       }
     });
+  };
+
+  const handleDownloadPDF = async (reportId: string) => {
+    setGeneratingPdf(reportId);
+    
+    try {
+      const result = await pdfMutation.mutateAsync({ reportId });
+      
+      // Download the PDF
+      const link = document.createElement('a');
+      link.href = result.pdfUrl;
+      link.download = `report-${reportId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Refresh reports list to update pdfUrl
+      refetch();
+    } catch (error) {
+      console.error('Failed to generate PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
+    } finally {
+      setGeneratingPdf(null);
+    }
   };
 
   const parseInsights = (insightsJson: string | null) => {
@@ -78,6 +106,9 @@ export default function ReportsPage() {
             <div className="space-y-4">
               {reports.map((report) => {
                 const hasInsights = !!report.insights;
+                const hasPdf = !!report.pdfUrl;
+                const isGeneratingThisPdf = generatingPdf === report.id;
+                
                 return (
                   <div
                     key={report.id}
@@ -99,21 +130,40 @@ export default function ReportsPage() {
                           <Calendar className="h-3 w-3" />
                           {new Date(report.createdAt).toLocaleDateString()}
                         </p>
-                        {hasInsights && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20 mt-1">
-                            <Sparkles className="h-3 w-3" />
-                            AI Insights Available
-                          </span>
-                        )}
+                        <div className="flex items-center gap-2 mt-1">
+                          {hasInsights && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+                              <Sparkles className="h-3 w-3" />
+                              AI Insights
+                            </span>
+                          )}
+                          {hasPdf && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-600/20">
+                              <FileText className="h-3 w-3" />
+                              PDF Ready
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {report.pdfUrl && (
-                        <button className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
-                          <Download className="h-4 w-4" />
-                          Download PDF
-                        </button>
-                      )}
+                      <button
+                        onClick={() => handleDownloadPDF(report.id)}
+                        disabled={isGeneratingThisPdf}
+                        className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {isGeneratingThisPdf ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-4 w-4" />
+                            {hasPdf ? 'Download' : 'Generate'} PDF
+                          </>
+                        )}
+                      </button>
                       <button
                         onClick={() => setSelectedReport(selectedReport === report.id ? null : report.id)}
                         className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold ${
